@@ -57,7 +57,7 @@ A companion **Python utility** enables users to **download captured images** and
 //    - Flash Size: 4MB
 //    - Core Debug Level: None
 ```
-![[assets/1.png]]
+![alt text](assets/1.png)
 #### 2. **Hardware Wiring for ESP32 Upload**
 ```
 ESP32-CAM → FTDI Programmer
@@ -250,7 +250,7 @@ git pull origin main  # Fetch latest changes
 - Work coordinate zeroing (`G10 L20`)
 - Emergency stop (soft reset: `0x18`)
 
-![[assets/2.png]]
+![alt text](assets/2.png)
 ### 2. **Live Camera Streaming**
 - MJPEG stream over dedicated port (`:81/stream`)
 - Configurable:
@@ -259,7 +259,7 @@ git pull origin main  # Fetch latest changes
   - Brightness/contrast (-2 → +2)
   - Horizontal/vertical flip
 
-![[assets/3.png]]
+![alt text](assets/3.png)
 ### 3. **Automated Spatial Scanning**
 - **Raster scan pattern**: Zig-zag motion over user-defined XY grid
 - Parameters:
@@ -270,13 +270,13 @@ git pull origin main  # Fetch latest changes
 - Each scan creates a **dedicated folder** (`/scan_N/`) on SD card
 - Images saved as `img_00000.jpg`, `img_00001.jpg`, ...
 
-![[assets/4.png]]
+![alt text](assets/4.png)
 ### 4. **File Management**
 - Browse/delete scan folders via web UI
 - Secure download endpoint (only `.jpg` in `/scan_*` allowed)
 - Recursive folder deletion
 
-![[assets/5.png]]
+![alt text](assets/5.png)
 ### 5. **Python Scan-to-Video Utility**
 - Auto-detects scan folders from ESP32
 - Downloads all images in order
@@ -288,7 +288,7 @@ git pull origin main  # Fetch latest changes
 - Optional: Save raw images to `downloads/`
 - Rich CLI with progress bars, tables, and validation
 
-![[assets/6.png]]
+![alt text](assets/6.png)
 
 ---
 
