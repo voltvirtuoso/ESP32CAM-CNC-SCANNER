@@ -10,6 +10,7 @@ const char* password = "aeioq8912";
 const uint16_t HTTP_PORT = 80;
 const uint16_t STREAM_PORT = 81;  // Separate port for streaming
 float scanFeedRate = 150.0;  // Default feedrate
+float defaultFeedRate = 150.0;  // Default feedrate
 // ===========================
 
 // GRBL Serial Communication (to Arduino) - Using Serial (UART0)
@@ -93,6 +94,14 @@ enum ScanState {
   NEXT_ROW, 
   SCAN_COMPLETE 
 };
+
+// Saved positions
+struct SavedPoint {
+  String name;
+  float x, y, z;
+};
+std::vector<SavedPoint> savedPoints;
+
 ScanState currentScanState = SCAN_COMPLETE;
 int currentRow = 0;
 bool goingRight = true;
@@ -650,7 +659,18 @@ body {
               <button class="btn home-btn" onclick="getStatus()">Status</button>
             </div>
           </div>
-
+          
+          <!-- Saved Points -->
+          <div class="content-section">
+            <h3>Saved Points</h3>
+            <div class="form-group">
+              <label>Point Name:</label>
+              <input type="text" id="pointName" placeholder="e.g., Home, Corner A">
+            </div>
+            <button class="btn home-btn" onclick="saveCurrentPoint()">Save Current Position</button>
+            <div id="savedPointsList" style="margin-top:15px;"></div>
+          </div>
+          
           <!-- Spatial Scan -->
           <div class="content-section">
             <h3>Spatial Scan</h3>
@@ -920,7 +940,57 @@ body {
 				}
 				setTimeout(getStatus,500);
 			}
+function saveCurrentPoint() {
+  const name = document.getElementById('pointName').value.trim();
+  if (!name) {
+    alert('Please enter a point name');
+    return;
+  }
+  api('/savepoint', 'name=' + encodeURIComponent(name)).then(resp => {
+    if (resp === 'OK') {
+      alert('Point saved!');
+      loadSavedPoints();
+    } else {
+      alert('Error: ' + resp);
+    }
+  });
+}
 
+function loadSavedPoints() {
+  api('/getpoints').then(data => {
+    try {
+      const points = JSON.parse(data);
+      let html = '';
+      if (points.length === 0) {
+        html = '<p>No saved points.</p>';
+      } else {
+        points.forEach(pt => {
+          html += `
+            <div style="display:flex;gap:8px;margin:5px 0;align-items:center;">
+              <span><strong>${pt.name}</strong>: X${pt.x} Y${pt.y} Z${pt.z}</span>
+              <button class="btn x-btn" style="padding:6px 10px;font-size:14px;" onclick="goToPoint('${pt.name}')">Go</button>
+            </div>`;
+        });
+      }
+      document.getElementById('savedPointsList').innerHTML = html;
+    } catch(e) {
+      console.error(e);
+      document.getElementById('savedPointsList').innerHTML = '<p>Error loading points</p>';
+    }
+  });
+}
+
+function goToPoint(name) {
+  if (!confirm(`Move to point "${name}"?`)) return;
+  api('/gotopoint', 'name=' + encodeURIComponent(name)).then(resp => {
+    if (resp === 'OK') {
+      alert('Moving to point');
+      getStatus();
+    } else {
+      alert('Error: ' + resp);
+    }
+  });
+}
 			function preset(cmd){send(cmd);}
 
 			function send(cmd){
@@ -1039,6 +1109,7 @@ body {
         console.log('Ready');
         getStatus();
         updateSystemInfo();
+        loadSavedPoints(); 
       };
 
       function loadFiles(dir = '/') {
@@ -1336,7 +1407,7 @@ void captureTask(void * parameter) {
         saveFrame(fb, currentScanFolder.c_str(), frameCounter++);
         esp_camera_fb_return(fb);
       }
-      // Optional: add small delay to avoid overwhelming SD
+      // small delay to avoid overwhelming SD
       // delay(50); // ~20 FPS max
     } else {
       frameCounter = 0;
@@ -1510,6 +1581,65 @@ void handleDeleteFolder() {
   }
 }
 
+void handleSavePoint() {
+  if (!server.hasArg("name")) {
+    server.send(400, "text/plain", "Missing name");
+    return;
+  }
+  String name = server.arg("name");
+  // Parse current position
+  float x = 0, y = 0, z = 0;
+  updateGRBLStatus(); // Ensure up-to-date
+  String pos = currentPosition;
+  int comma1 = pos.indexOf(' ');
+  int comma2 = pos.indexOf(' ', comma1 + 1);
+  if (comma1 > 0 && comma2 > comma1) {
+    x = pos.substring(2, comma1).toFloat();
+    y = pos.substring(comma1 + 3, comma2).toFloat();
+    z = pos.substring(comma2 + 3).toFloat();
+  }
+  SavedPoint pt;
+  pt.name = name;
+  pt.x = x;
+  pt.y = y;
+  pt.z = z;
+  savedPoints.push_back(pt);
+  Serial.println("Saved point: " + name + " @ " + String(x) + "," + String(y) + "," + String(z));
+  server.send(200, "text/plain", "OK");
+}
+
+void handleGetPoints() {
+  String json = "[";
+  for (size_t i = 0; i < savedPoints.size(); i++) {
+    if (i > 0) json += ",";
+    json += "{";
+    json += "\"name\":\"" + savedPoints[i].name + "\",";
+    json += "\"x\":" + String(savedPoints[i].x, 3) + ",";
+    json += "\"y\":" + String(savedPoints[i].y, 3) + ",";
+    json += "\"z\":" + String(savedPoints[i].z, 3);
+    json += "}";
+  }
+  json += "]";
+  server.send(200, "application/json", json);
+}
+
+void handleGoToPoint() {
+  if (!server.hasArg("name")) {
+    server.send(400, "text/plain", "Missing name");
+    return;
+  }
+  String name = server.arg("name");
+  for (const auto& pt : savedPoints) {
+    if (pt.name == name) {
+      String cmd = "G21 G90 G0 X" + String(pt.x, 3) + " Y" + String(pt.y, 3) + " Z" + String(pt.z, 3) + " F" + String(defaultFeedRate);
+      String resp = sendToGRBL(cmd, 2000);
+      server.send(200, "text/plain", resp.length() ? resp : "OK");
+      return;
+    }
+  }
+  server.send(404, "text/plain", "Point not found");
+}
+
 // Non-blocking spatial scan task
 void scanTask(void * parameter) {
   while(true) {
@@ -1624,6 +1754,9 @@ void setup() {
   server.on("/files", HTTP_GET, handleFiles);
   server.on("/download", HTTP_GET, handleDownload);
   server.on("/deletefolder", HTTP_GET, handleDeleteFolder);
+  server.on("/savepoint", HTTP_GET, handleSavePoint);
+  server.on("/getpoints", HTTP_GET, handleGetPoints);
+  server.on("/gotopoint", HTTP_GET, handleGoToPoint);
   server.onNotFound(handleNotFound);
   server.begin();
 
