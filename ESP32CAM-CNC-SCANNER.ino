@@ -293,7 +293,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
   --success: #51cf66;
   --warning: #ffd43b;
   --danger: #ff6b6b;
-  --border-radius: 8px;
+  --border-radius: 40px;
   --box-shadow: 0 4px 15px rgba(0,0,0,0.3);
 }
 body {
@@ -636,17 +636,17 @@ body {
             </div>
           </div>
           <!-- Saved Points -->
-<div class="content-section">
-  <h3>Saved Points</h3>
-  <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
-    <div class="form-group" style="flex: 1;">
-      <label>Point Name:</label>
-      <input type="text" id="pointName" placeholder="e.g., Home, Corner A">
-    </div>
-    <button class="btn home-btn" onclick="saveCurrentPoint()">Save Current Position</button>
-  </div>
-  <div id="savedPointsList" style="margin-top:15px;"></div>
-</div>
+          <div class="content-section">
+            <h3>Saved Points</h3>
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+              <div class="form-group" style="flex: 1;">
+                <label>Point Name:</label>
+                <input type="text" id="pointName" placeholder="e.g., Home, Corner A">
+              </div>
+              <button class="btn home-btn" onclick="saveCurrentPoint()">Save Current Position</button>
+            </div>
+            <div id="savedPointsList" style="margin-top:15px;"></div>
+          </div>
           <!-- Spatial Scan -->
           <div class="content-section">
             <h3>Spatial Scan</h3>
@@ -729,8 +729,8 @@ body {
               <div class="control-group">
                 <h3>Flip Options</h3>
                 <div style="display:flex;gap:10px;margin-top:10px">
-                  <button class="btn home-btn" onclick="toggleFlip('h')">H-Flip</button>
-                  <button class="btn home-btn" onclick="toggleFlip('v')">V-Flip</button>
+                  <button class="btn home-btn" onclick="toggleFlip('h')" style="width:50%;" >H-Flip</button>
+                  <button class="btn home-btn" onclick="toggleFlip('v')" style="width:50%;" >V-Flip</button>
                 </div>
               </div>
             </div>
@@ -975,9 +975,9 @@ function loadSavedPoints() {
         points.forEach(pt => {
           html += `
             <div style="display:flex;gap:8px;margin:5px 0;align-items:center;">
-              <span><strong>${pt.name}</strong>: X${pt.x} Y${pt.y} Z${pt.z}</span>
-              <button class="btn reset-btn" style="padding:6px 10px;font-size:14px;" onclick="goToPoint('${pt.name}')">Go</button>
-              <button class="btn stop-btn" style="padding:6px 10px;font-size:14px;" onclick="deletePoint('${pt.name}')">Delete</button>
+              <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><strong>${pt.name}</strong>: X${pt.x} Y${pt.y} Z${pt.z}</span>
+              <button class="btn reset-btn" style="padding:6px 10px;font-size:14px; width:45%;" onclick="goToPoint('${pt.name}')">Go</button>
+              <button class="btn stop-btn" style="padding:6px 10px;font-size:14px; width:45%;" onclick="deletePoint('${pt.name}')">Delete</button>
             </div>`;
         });
       }
@@ -1175,7 +1175,7 @@ function stopScan(){
             // Parent folder
             if (data.parent) {
               const pf = (data.parent.lastIndexOf('/') > 0) ? data.parent.substring(0, data.parent.lastIndexOf('/')) : '/';
-              html += `<button class="btn home-btn" style="display:block;margin:1px 0 1px;text-decoration:none" onclick="loadFiles('${pf}')">..</button><br>`;
+              html += `<button class="btn home-btn" style="display:block;margin:1px 0 1px;text-decoration:none; width:100%; text-align:left; " onclick="loadFiles('${pf}')">..</button><br>`;
             }
             // Folders
             data.folders.forEach(folder => {

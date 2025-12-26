@@ -1,4 +1,5 @@
 #include "esp_camera.h"
+#include <esp_system.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include "FS.h"
@@ -231,6 +232,49 @@ bool initCamera(){
   }
   return true;
 }
+
+String getSystemInfo() {
+  // Get detailed heap info
+  uint32_t freeHeap = ESP.getFreeHeap();
+  uint32_t totalHeap = ESP.getHeapSize();
+  uint32_t minFreeHeap = ESP.getMinFreeHeap(); // Lowest point since boot
+  uint32_t maxAlloc = ESP.getMaxAllocHeap();   // Largest contiguous block
+
+  String json = "{";
+  // --- System & Uptime ---
+  json += "\"uptime_ms\":" + String(millis()) + ",";
+  json += "\"chip_model\":\"" + String(ESP.getChipModel()) + "\",";
+  json += "\"chip_revision\":" + String(ESP.getChipRevision()) + ",";
+  json += "\"cpu_freq_mhz\":" + String(ESP.getCpuFreqMHz()) + ",";
+
+  // --- Network (WiFi) ---
+  json += "\"wifi_rssi\":" + String(WiFi.RSSI()) + ",";
+  json += "\"wifi_ip\":\"" + WiFi.localIP().toString() + "\",";
+  json += "\"wifi_ssid\":\"" + String(WiFi.SSID()) + "\",";
+
+  // --- Memory (RAM) ---
+  json += "\"heap_free\":" + String(freeHeap) + ",";
+  json += "\"heap_total\":" + String(totalHeap) + ",";
+  json += "\"heap_min_ever\":" + String(minFreeHeap) + ",";
+  json += "\"heap_max_alloc\":" + String(maxAlloc) + ",";
+  json += "\"heap_usage_pct\":" + String(100 - (freeHeap * 100 / totalHeap)) + ",";
+
+  // --- Storage (Flash) ---
+  json += "\"flash_size\":" + String(ESP.getFlashChipSize()) + ",";
+  json += "\"flash_speed\":" + String(ESP.getFlashChipSpeed() / 1000000) + ",";
+  
+  // --- Internal Sensors ---
+  // Note: Internal temp sensor is only available on specific ESP32 models (e.g., original ESP32)
+  #ifdef TEMPERATURE_SENSOR_AVAILABLE
+  json += "\"core_temp\":" + String((temprature_sens_read() - 32) / 1.8) + ",";
+  #endif
+
+  json += "\"reset_reason\":" + String(esp_reset_reason());
+  json +="}";
+  
+  return json;
+}
+
 const char HTML_PAGE[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
@@ -249,7 +293,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
   --success: #51cf66;
   --warning: #ffd43b;
   --danger: #ff6b6b;
-  --border-radius: 8px;
+  --border-radius: 40px;
   --box-shadow: 0 4px 15px rgba(0,0,0,0.3);
 }
 body {
@@ -592,17 +636,17 @@ body {
             </div>
           </div>
           <!-- Saved Points -->
-<div class="content-section">
-  <h3>Saved Points</h3>
-  <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
-    <div class="form-group" style="flex: 1;">
-      <label>Point Name:</label>
-      <input type="text" id="pointName" placeholder="e.g., Home, Corner A">
-    </div>
-    <button class="btn home-btn" onclick="saveCurrentPoint()">Save Current Position</button>
-  </div>
-  <div id="savedPointsList" style="margin-top:15px;"></div>
-</div>
+          <div class="content-section">
+            <h3>Saved Points</h3>
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+              <div class="form-group" style="flex: 1;">
+                <label>Point Name:</label>
+                <input type="text" id="pointName" placeholder="e.g., Home, Corner A">
+              </div>
+              <button class="btn home-btn" onclick="saveCurrentPoint()">Save Current Position</button>
+            </div>
+            <div id="savedPointsList" style="margin-top:15px;"></div>
+          </div>
           <!-- Spatial Scan -->
           <div class="content-section">
             <h3>Spatial Scan</h3>
@@ -633,8 +677,8 @@ body {
               </div>
             </div>
             <div style="display:flex;gap:10px;margin-top:15px">
-              <button class="btn scan-btn" onclick="startScan()">Start Scan</button>
-              <button class="btn stop-btn" onclick="stopScan()">Stop/Resume Scan</button>
+              <button class="btn scan-btn" onclick="startScan()" style="width:50%;">Start Scan</button>
+              <button class="btn stop-btn" onclick="stopScan()" style="width:50%;" >Stop/Resume Scan</button>
             </div>
             <div class="scan-progress">
               <div id="scanProgressBar" class="scan-progress-bar"></div>
@@ -685,8 +729,8 @@ body {
               <div class="control-group">
                 <h3>Flip Options</h3>
                 <div style="display:flex;gap:10px;margin-top:10px">
-                  <button class="btn home-btn" onclick="toggleFlip('h')">H-Flip</button>
-                  <button class="btn home-btn" onclick="toggleFlip('v')">V-Flip</button>
+                  <button class="btn home-btn" onclick="toggleFlip('h')" style="width:50%;" >H-Flip</button>
+                  <button class="btn home-btn" onclick="toggleFlip('v')" style="width:50%;" >V-Flip</button>
                 </div>
               </div>
             </div>
@@ -701,7 +745,7 @@ body {
                 <h3>Default Feed Rates</h3>
                 <div class="form-group">
                   <label>Default Feed Rate (mm/min):</label>
-                  <input type="number" id="defaultFeedRate" value="1000" min="10" max="5000" step="100" onchange="updateDefaultFeedRate()">
+                  <input type="number" id="defaultFeedRate" value="150" min="10" max="5000" step="100" onchange="updateDefaultFeedRate()">
                 </div>
               </div>
               <div class="control-group">
@@ -753,29 +797,68 @@ body {
           <div class="content-section">
             <h3>System Information</h3>
             <div class="status-grid">
+              <!-- HARDWARE -->
               <div class="status-item">
-                <div class="status-label">Firmware Version</div>
-                <div class="status-value">v1.0.0</div>
+                <div class="status-label">Chip Model</div>
+                <div class="status-value" id="chip_model">--</div>
               </div>
               <div class="status-item">
-                <div class="status-label">ESP32 Core</div>
-                <div class="status-value">FreeRTOS</div>
+                <div class="status-label">Chip Revision</div>
+                <div class="status-value" id="chip_revision">--</div>
+              </div>
+              <div class="status-item">
+                <div class="status-label">CPU Frequency</div>
+                <div class="status-value" id="cpu_freq_mhz">-- MHz</div>
+              </div>
+              <div class="status-item">
+                <div class="status-label">Reset Reason</div>
+                <div class="status-value" id="reset_reason">--</div>
+              </div>
+
+              <!-- NETWORK -->
+              <div class="status-item">
+                <div class="status-label">WiFi SSID</div>
+                <div class="status-value" id="wifi_ssid">--</div>
+              </div>
+              <div class="status-item">
+                <div class="status-label">IP Address</div>
+                <div class="status-value" id="wifi_ip">--</div>
+              </div>
+              <div class="status-item">
+                <div class="status-label">Signal Strength</div>
+                <div class="status-value" id="wifi_rssi">-- dBm</div>
               </div>
               <div class="status-item">
                 <div class="status-label">Uptime</div>
-                <div class="status-value" id="uptime">--</div>
+                <div class="status-value" id="uptime_ms">--</div>
+              </div>
+
+              <!-- MEMORY & PERFORMANCE -->
+              <div class="status-item">
+                <div class="status-label">RAM Usage</div>
+                <div class="status-value" id="heap_usage_pct">--%</div>
               </div>
               <div class="status-item">
-                <div class="status-label">WiFi Signal</div>
-                <div class="status-value" id="wifiSignal">-- dBm</div>
+                <div class="status-label">Free Heap</div>
+                <div class="status-value" id="heap_free">-- KB</div>
               </div>
               <div class="status-item">
-                <div class="status-label">CPU Usage</div>
-                <div class="status-value" id="cpuUsage">--%</div>
+                <div class="status-label">Min Free Ever</div>
+                <div class="status-value" id="heap_min_ever">-- KB</div>
               </div>
               <div class="status-item">
-                <div class="status-label">Memory</div>
-                <div class="status-value" id="memory">--%</div>
+                <div class="status-label">Max Alloc Block</div>
+                <div class="status-value" id="heap_max_alloc">-- KB</div>
+              </div>
+
+              <!-- STORAGE -->
+              <div class="status-item">
+                <div class="status-label">Flash Size</div>
+                <div class="status-value" id="flash_size">-- MB</div>
+              </div>
+              <div class="status-item">
+                <div class="status-label">Flash Speed</div>
+                <div class="status-value" id="flash_speed">-- MHz</div>
               </div>
             </div>
           </div>
@@ -892,9 +975,9 @@ function loadSavedPoints() {
         points.forEach(pt => {
           html += `
             <div style="display:flex;gap:8px;margin:5px 0;align-items:center;">
-              <span><strong>${pt.name}</strong>: X${pt.x} Y${pt.y} Z${pt.z}</span>
-              <button class="btn reset-btn" style="padding:6px 10px;font-size:14px;" onclick="goToPoint('${pt.name}')">Go</button>
-              <button class="btn stop-btn" style="padding:6px 10px;font-size:14px;" onclick="deletePoint('${pt.name}')">Delete</button>
+              <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><strong>${pt.name}</strong>: X${pt.x} Y${pt.y} Z${pt.z}</span>
+              <button class="btn reset-btn" style="padding:6px 10px;font-size:14px; width:45%;" onclick="goToPoint('${pt.name}')">Go</button>
+              <button class="btn stop-btn" style="padding:6px 10px;font-size:14px; width:45%;" onclick="deletePoint('${pt.name}')">Delete</button>
             </div>`;
         });
       }
@@ -1038,15 +1121,42 @@ function stopScan(){
         api('/systeminfo').then(data => {
           try {
             const info = JSON.parse(data);
-            document.getElementById('uptime').textContent = info.uptime;
-            document.getElementById('wifiSignal').textContent = info.wifiSignal + ' dBm';
-            document.getElementById('cpuUsage').textContent = info.cpuUsage + '%';
-            document.getElementById('memory').textContent = info.memory + '%';
+            // 1. Handle standard text/number fields automatically
+            const fields = [
+                'chip_model', 'chip_revision', 'wifi_ssid', 
+                'wifi_ip', 'wifi_rssi', 'reset_reason'
+            ];
+            fields.forEach(id => {
+                document.getElementById(id).innerText = info[id];
+            });
+
+            // 2. Handle fields requiring units or formatting
+            document.getElementById('cpu_freq_mhz').innerText = info.cpu_freq_mhz + " MHz";
+            document.getElementById('flash_speed').innerText = info.flash_speed + " MHz";
+            
+            // Convert Bytes to KB/MB
+            document.getElementById('heap_free').innerText = (info.heap_free / 1024).toFixed(1) + " KB";
+            document.getElementById('heap_min_ever').innerText = (info.heap_min_ever / 1024).toFixed(1) + " KB";
+            document.getElementById('heap_max_alloc').innerText = (info.heap_max_alloc / 1024).toFixed(1) + " KB";
+            document.getElementById('flash_size').innerText = (info.flash_size / (1024 * 1024)) + " MB";
+            document.getElementById('heap_usage_pct').innerText = (info.heap_usage_pct) + " %";
+
+            // Format Uptime
+            document.getElementById('uptime_ms').innerText = formatUptime(info.uptime_ms);
           } catch(e) {
             console.error(e);
           }
         });
       }
+
+      function formatUptime(ms) {
+        let s = Math.floor(ms / 1000);
+        let m = Math.floor(s / 60);
+        let h = Math.floor(m / 60);
+        let d = Math.floor(h / 24);
+        return `${d}d ${h % 24}h ${m % 60}m ${s % 60}s`;
+      }
+
 			setInterval(getStatus,2000);
 			setInterval(updateScanStatus, 500);
       setInterval(updateSystemInfo, 5000);
@@ -1065,7 +1175,7 @@ function stopScan(){
             // Parent folder
             if (data.parent) {
               const pf = (data.parent.lastIndexOf('/') > 0) ? data.parent.substring(0, data.parent.lastIndexOf('/')) : '/';
-              html += `<button class="btn home-btn" style="display:block;margin:1px 0 1px;text-decoration:none" onclick="loadFiles('${pf}')">..</button><br>`;
+              html += `<button class="btn home-btn" style="display:block;margin:1px 0 1px;text-decoration:none; width:100%; text-align:left; " onclick="loadFiles('${pf}')">..</button><br>`;
             }
             // Folders
             data.folders.forEach(folder => {
@@ -1199,7 +1309,7 @@ void handleStartScan() {
   scanYStart = server.arg("ystart").toFloat();
   scanYEnd = server.arg("yend").toFloat();
   scanStepSize = server.arg("step").toFloat();
-  scanFeedRate = server.hasArg("feed") ? server.arg("feed").toFloat() : 150.0;
+  scanFeedRate = server.hasArg("feed") ? server.arg("feed").toFloat() : defaultFeedRate;
   scanXCount = (int)ceil(abs(scanXEnd - scanXStart) / scanStepSize) + 1;
   scanYCount = (int)ceil(abs(scanYEnd - scanYStart) / scanStepSize) + 1;
   totalScanPoints = scanXCount * scanYCount;
@@ -1285,12 +1395,8 @@ void handleSystemInfo() {
   uint32_t seconds = uptime % 60;
   String uptimeStr = String(days) + "d " + String(hours) + "h " + 
                      String(minutes) + "m " + String(seconds) + "s";
-  String json = "{";
-  json += "\"uptime\":\"" + uptimeStr + "\",";
-  json += "\"wifiSignal\":" + String(WiFi.RSSI()) + ",";
-  json += "\"cpuUsage\":45,";  // Placeholder
-  json += "\"memory\":60";     // Placeholder
-  json += "}";
+  String json = getSystemInfo();
+
   server.send(200, "application/json", json);
 }
 void handleNotFound(){
@@ -1338,7 +1444,7 @@ void saveFrame(camera_fb_t * fb, const char* folder, int index) {
   if (file) {
     file.write(fb->buf, fb->len);
     file.close();
-    Serial.printf("Saved: %s (%u bytes)\n", filename.c_str(), fb->len);
+    // Serial.printf("Saved: %s (%u bytes)\n", filename.c_str(), fb->len);
   }
 }
 void captureTask(void * parameter) {
