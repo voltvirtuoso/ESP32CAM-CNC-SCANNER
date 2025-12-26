@@ -4,9 +4,8 @@
 #include <WebServer.h>
 #include "FS.h"
 #include "SD_MMC.h"
+#include<SIH.h>
 // ======= USER CONFIG =======
-const char* ssid = "HUAWEI Y5 2017";
-const char* password = "33557799";
 const uint16_t HTTP_PORT = 80;
 const uint16_t STREAM_PORT = 81;  // Separate port for streaming
 float defaultFeedRate = 150.0;  // Default feedrate for all movements
@@ -54,6 +53,7 @@ const uint32_t GRBL_BAUD = 115200;
   #define HREF_GPIO_NUM    7
   #define PCLK_GPIO_NUM    13
 #endif
+SIH sih(&Serial);
 WebServer server(HTTP_PORT);
 WebServer streamServer(STREAM_PORT);
 static const char* _STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=frame";
@@ -441,7 +441,7 @@ body {
 .home-btn { background: linear-gradient(to bottom, #ffd43b, #f9c22e); color: #333; }
 .stop-btn { background: linear-gradient(to bottom, #ff6b6b, #d32f2f); color: white; }
 .reset-btn { background: linear-gradient(to bottom, #51cf66, #37b24d); color: white; }
-.scan-btn { background: linear-gradient(to bottom, #9c36b5, #7b2cbf); color: white; }
+.scan-btn { background: linear-gradient(to bottom, #1e1e1e, #3d3d3d); color: white; }
 .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
 .btn:active { transform: translateY(0); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -976,8 +976,8 @@ function loadSavedPoints() {
           html += `
             <div style="display:flex;gap:8px;margin:5px 0;align-items:center;">
               <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><strong>${pt.name}</strong>: X${pt.x} Y${pt.y} Z${pt.z}</span>
-              <button class="btn reset-btn" style="padding:6px 10px;font-size:14px; width:45%;" onclick="goToPoint('${pt.name}')">Go</button>
-              <button class="btn stop-btn" style="padding:6px 10px;font-size:14px; width:45%;" onclick="deletePoint('${pt.name}')">Delete</button>
+              <button class="btn reset-btn" style="padding:6px 10px;font-size:14px; width:40%;" onclick="goToPoint('${pt.name}')">Go</button>
+              <button class="btn stop-btn" style="padding:6px 10px;font-size:14px; width:40%;" onclick="deletePoint('${pt.name}')">Delete</button>
             </div>`;
         });
       }
@@ -1428,7 +1428,7 @@ String createScanFolder() {
     n++;
   } while (SD_MMC.exists(folder.c_str()));
   if (SD_MMC.mkdir(folder.c_str())) {
-    Serial.println("Created folder: " + folder);
+    // Serial.println("Created folder: " + folder);
     return folder;
   }
   return "/"; // fallback
@@ -1674,7 +1674,7 @@ void handleGoToPoint() {
   String name = server.arg("name");
   for (const auto& pt : savedPoints) {
     if (pt.name == name) {
-      String cmd = "G21 G90 G0 X" + String(pt.x, 3) + " Y" + String(pt.y, 3) + " Z" + String(pt.z, 3) + " F" + String(defaultFeedRate);
+      String cmd = "G90 G01 X" + String(pt.x, 3) + " Y" + String(pt.y, 3) + " Z" + String(pt.z, 3) + " F" + String(defaultFeedRate);
       String resp = sendToGRBL(cmd, 2000);
       server.send(200, "text/plain", resp.length() ? resp : "OK");
       return;
@@ -1696,7 +1696,7 @@ void scanTask(void * parameter) {
         case SCAN_STARTING:
           // Move to starting position
           {
-            String startCmd = "G21 G90 G0 X" + String(scanXStart, 2) + " Y" + String(scanYStart, 2) + " F" + String(defaultFeedRate);
+            String startCmd = "G90 G01 X" + String(scanXStart, 2) + " Y" + String(scanYStart, 2) + " F" + String(defaultFeedRate);
             sendToGRBL(startCmd);
             currentScanState = MOVE_TO_ROW;
           }
@@ -1711,7 +1711,7 @@ void scanTask(void * parameter) {
           // Send command to traverse the row
           {
             float xTarget = goingRight ? scanXEnd : scanXStart;
-            String xMove = "G21 G90 G1 X" + String(xTarget, 2) + " F" + String(scanFeedRate);
+            String xMove = "G90 G01 X" + String(xTarget, 2) + " F" + String(scanFeedRate);
             sendToGRBL(xMove);
             currentScanState = NEXT_ROW;
           }
@@ -1732,7 +1732,7 @@ void scanTask(void * parameter) {
             currentRow++;
             goingRight = !goingRight;
             float yTarget = scanYStart + currentRow * scanStepSize;
-            String yMove = "G21 G90 G0 Y" + String(yTarget, 2) + " F" + String(defaultFeedRate);
+            String yMove = "G90 G01 Y" + String(yTarget, 2) + " F" + String(defaultFeedRate);
             sendToGRBL(yMove);
             currentScanState = MOVE_TO_ROW;
           }
@@ -1754,6 +1754,17 @@ void setup() {
   // Initialize Serial for GRBL communication (UART0)
   Serial.begin(GRBL_BAUD);
   delay(2000);
+
+  // Initialize the Serial Interface Handler
+  if (!sih.begin(115200)) {
+      Serial.println("Failed to initialize ESP32_SIH");
+      while (true) {
+          delay(1000);
+      }
+  }
+
+  // Set custom timeout (3 minutes)
+  sih.setTimeout(180000);
   Serial.println("Init camera...");
   if (!initCamera()) {
     delay(3000);
@@ -1765,18 +1776,7 @@ void setup() {
   } else {
     Serial.println("SD Card initialized");
   }
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  uint32_t start = millis();
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    if (millis() - start > 20000) {
-      delay(3000);
-      ESP.restart();
-    }
-  }
-  Serial.print("ESP IP Address: ");
-  Serial.println(WiFi.localIP());
+
   server.on("/", HTTP_GET, handleRoot);
   server.on("/cmd", HTTP_GET, handleCmd);
   server.on("/status", HTTP_GET, handleStatus);
@@ -1808,5 +1808,6 @@ void setup() {
 }
 void loop() {
   server.handleClient();
+  sih.process();
   delay(1);
 }
