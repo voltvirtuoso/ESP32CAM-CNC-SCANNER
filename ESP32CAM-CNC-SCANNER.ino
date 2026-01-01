@@ -56,6 +56,7 @@ const uint32_t GRBL_BAUD = 115200;
 SIH sih(&Serial);
 WebServer server(HTTP_PORT);
 WebServer streamServer(STREAM_PORT);
+SemaphoreHandle_t grblMutex;
 static const char* _STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=frame";
 static const char* _STREAM_BOUNDARY = "\r\n--frame\r\n";
 static const char* _STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
@@ -99,7 +100,9 @@ bool goingRight = true;
 // Send command to GRBL and wait for response
 String sendToGRBL(String cmd, uint32_t timeout = 1000) {
   cmd.trim();
+  xSemaphoreTake(grblMutex, portMAX_DELAY);
   GRBL_SERIAL.println(cmd);
+  xSemaphoreGive(grblMutex);
   String response = "";
   uint32_t start = millis();
   while (millis() - start < timeout) {
@@ -117,7 +120,9 @@ String sendToGRBL(String cmd, uint32_t timeout = 1000) {
 }
 // Request GRBL status - Parse WPos instead of MPos
 void updateGRBLStatus() {
+  xSemaphoreTake(grblMutex, portMAX_DELAY);
   GRBL_SERIAL.write('?');
+  xSemaphoreGive(grblMutex);
   uint32_t start = millis();
   String status = "";
   while (millis() - start < 300) {
@@ -174,7 +179,9 @@ void updateGRBLStatus() {
 void initGRBL() {
   delay(2000); // Wait for GRBL to boot
   // Send soft reset
+  xSemaphoreTake(grblMutex, portMAX_DELAY);
   GRBL_SERIAL.write(0x18);
+  xSemaphoreGive(grblMutex);
   delay(1000);
   // Clear any startup messages
   while (GRBL_SERIAL.available()) {
@@ -1750,6 +1757,9 @@ void scanTask(void * parameter) {
     delay(100); // Non-blocking delay
   }
 }
+
+
+
 void setup() {
   // Initialize Serial for GRBL communication (UART0)
   Serial.begin(GRBL_BAUD);
@@ -1801,7 +1811,8 @@ void setup() {
   streamServer.onNotFound(handleStreamNotFound);
   streamServer.begin();
   xTaskCreatePinnedToCore(streamTask, "StreamTask", 10000, NULL, 1, NULL, 0);
-  xTaskCreatePinnedToCore(grblListenerTask, "GRBLTask", 4096, NULL, 1, NULL, 1);
+  // xTaskCreatePinnedToCore(grblListenerTask, "GRBLTask", 4096, NULL, 1, NULL, 1);
+  grblMutex = xSemaphoreCreateMutex();
   xTaskCreatePinnedToCore(scanTask, "ScanTask", 8192, NULL, 1, NULL, 1);
   xTaskCreatePinnedToCore(captureTask, "CaptureTask", 4096, NULL, 2, NULL, 1);
   initGRBL();
